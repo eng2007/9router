@@ -2,9 +2,11 @@ import crypto from "crypto";
 
 /**
  * Generate PKCE code verifier (43-128 characters)
+ *
+ * @param {number} [bytes=32] number of random bytes (xAI uses 96)
  */
-export function generateCodeVerifier() {
-  return crypto.randomBytes(32).toString("base64url");
+export function generateCodeVerifier(bytes = 32) {
+  return crypto.randomBytes(bytes).toString("base64url");
 }
 
 /**

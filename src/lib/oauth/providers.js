@@ -25,6 +25,8 @@ import {
   CODEBUDDY_CONFIG,
   getOAuthClientMetadata,
 } from "./constants/oauth";
+import { XAI_CONFIG, XAI_USER_AGENT, XAI_PKCE_VERIFIER_BYTES } from "./constants/xai";
+import { decodeIdTokenEmail as decodeXaiIdTokenEmail } from "./services/xai";
 
 const BASE64_BLOCK_SIZE = 4;
 
@@ -181,6 +183,65 @@ const PROVIDERS = {
           chatgptAccountId: info.chatgptAccountId,
           chatgptPlanType: info.chatgptPlanType,
         };
+      }
+      return mapped;
+    },
+  },
+
+  xai: {
+    config: XAI_CONFIG,
+    flowType: "authorization_code_pkce",
+    fixedPort: XAI_CONFIG.loopbackPort,
+    callbackPath: XAI_CONFIG.callbackPath,
+    pkceVerifierBytes: XAI_PKCE_VERIFIER_BYTES,
+    buildAuthUrl: (config, redirectUri, state, codeChallenge) => {
+      const params = {
+        response_type: "code",
+        client_id: config.clientId,
+        redirect_uri: redirectUri,
+        scope: config.scope,
+        code_challenge: codeChallenge,
+        code_challenge_method: config.codeChallengeMethod,
+        state,
+      };
+      const qs = Object.entries(params)
+        .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+        .join("&");
+      return `${config.authorizeUrl}?${qs}`;
+    },
+    exchangeToken: async (config, code, redirectUri, codeVerifier) => {
+      const response = await fetch(config.tokenUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+          "User-Agent": XAI_USER_AGENT,
+        },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          client_id: config.clientId,
+          code,
+          redirect_uri: redirectUri,
+          code_verifier: codeVerifier,
+        }),
+      });
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`xAI token exchange failed: ${error}`);
+      }
+      return await response.json();
+    },
+    mapTokens: (tokens) => {
+      const mapped = {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresIn: tokens.expires_in,
+        scope: tokens.scope,
+      };
+      const email = decodeXaiIdTokenEmail(tokens.id_token);
+      if (email) mapped.email = email;
+      if (tokens.id_token) {
+        mapped.providerSpecificData = { idToken: tokens.id_token };
       }
       return mapped;
     },
