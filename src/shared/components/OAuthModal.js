@@ -175,6 +175,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       let redirectUri;
       if (provider === "codex") {
         redirectUri = "http://localhost:1455/auth/callback";
+      } else if (provider === "xai") {
+        redirectUri = "http://127.0.0.1:56121/callback";
       } else {
         redirectUri = `http://localhost:${appPort}/callback`;
       }
@@ -208,7 +210,30 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         }
       }
 
-      setAuthData({ ...data, redirectUri, codexServerSide });
+      // xAI: same fixed-port server-side proxy pattern as codex (port 56121)
+      let xaiProxyActive = false;
+      let xaiServerSide = false;
+      if (provider === "xai") {
+        try {
+          const proxyUrl = new URL(`/api/oauth/xai/start-proxy`, window.location.origin);
+          proxyUrl.searchParams.set("app_port", appPort);
+          proxyUrl.searchParams.set("state", data.state);
+          proxyUrl.searchParams.set("code_verifier", data.codeVerifier);
+          proxyUrl.searchParams.set("redirect_uri", redirectUri);
+          const proxyRes = await fetch(proxyUrl.toString());
+          const proxyData = await proxyRes.json();
+          xaiProxyActive = proxyData.success;
+          xaiServerSide = !!proxyData.serverSide;
+          if (!xaiProxyActive && proxyData.reason === "port_busy") {
+            throw new Error("Port 56121 in use; close the conflicting process and retry");
+          }
+        } catch (e) {
+          if (e?.message) throw e;
+          xaiProxyActive = false;
+        }
+      }
+
+      setAuthData({ ...data, redirectUri, codexServerSide, xaiServerSide });
 
       if (provider === "codex" && codexProxyActive) {
         // Proxy active: callback will be handled server-side (auto-exchange) or via channels (fallback)
@@ -217,12 +242,18 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         if (!popupRef.current) {
           setStep("input");
         }
-      } else if (!isLocalhost || provider === "codex") {
+      } else if (provider === "xai" && xaiProxyActive) {
+        setStep("waiting");
+        popupRef.current = window.open(data.authUrl, "oauth_popup", "width=600,height=700");
+        if (!popupRef.current) {
+          setStep("input");
+        }
+      } else if (!isLocalhost || provider === "codex" || provider === "xai") {
         // Non-localhost or proxy failed: manual input mode
         setStep("input");
         window.open(data.authUrl, "_blank");
       } else {
-        // Localhost (non-Codex): Open popup and wait for message
+        // Localhost (non-Codex/xAI): Open popup and wait for message
         setStep("waiting");
         popupRef.current = window.open(data.authUrl, "oauth_popup", "width=600,height=700");
         if (!popupRef.current) {

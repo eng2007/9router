@@ -2,6 +2,35 @@ import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT, REFRESH_LEAD_MS } from "../config/appConstants.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
+// xAI refresh — wraps the class method from src/lib/oauth/services/xai.js so
+// the token-refresh switches below can stay flat (one function per provider).
+let _xaiServiceSingleton = null;
+async function refreshXaiToken(refreshToken, log) {
+  if (!refreshToken) return null;
+  try {
+    if (!_xaiServiceSingleton) {
+      const mod = await import("../../src/lib/oauth/services/xai.js");
+      _xaiServiceSingleton = new mod.XaiService();
+    }
+    const tokens = await _xaiServiceSingleton.refreshAccessToken(refreshToken);
+    return {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token || refreshToken,
+      expiresAt: tokens.expires_in
+        ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+        : undefined,
+      idToken: tokens.id_token,
+    };
+  } catch (e) {
+    log?.warn?.("TOKEN_REFRESH", `xai refresh failed: ${e?.message || e}`);
+    const msg = String(e?.message || "");
+    if (msg.includes("invalid_grant") || msg.includes("invalid_request")) {
+      return { error: "invalid_grant" };
+    }
+    return null;
+  }
+}
+
 // Default token expiry buffer (refresh if expires within 5 minutes)
 export const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 
@@ -567,6 +596,9 @@ async function _getAccessTokenInternal(provider, credentials, log) {
         log
       );
 
+    case "xai":
+      return await refreshXaiToken(credentials.refreshToken, log);
+
     case "vertex":
     case "vertex-partner": {
       const saJson = parseVertexSaJson(credentials.apiKey);
@@ -611,6 +643,8 @@ export async function refreshTokenByProvider(provider, credentials, log) {
         credentials.providerSpecificData,
         log
       );
+    case "xai":
+      return refreshXaiToken(credentials.refreshToken, log);
     case "vertex":
     case "vertex-partner": {
       const saJson = parseVertexSaJson(credentials.apiKey);
@@ -651,6 +685,7 @@ export function formatProviderCredentials(provider, credentials, log) {
     case "iflow":
     case "openai":
     case "openrouter":
+    case "xai":
       return {
         apiKey: credentials.apiKey,
         accessToken: credentials.accessToken

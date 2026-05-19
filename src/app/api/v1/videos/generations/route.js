@@ -1,4 +1,6 @@
 import { videosGenerate } from "@/lib/providers/xai/videos.js";
+import { getProviderCredentials } from "@/sse/services/auth.js";
+import { checkAndRefreshToken } from "@/sse/services/tokenRefresh.js";
 
 export async function OPTIONS() {
   return new Response(null, {
@@ -10,13 +12,28 @@ export async function OPTIONS() {
   });
 }
 
-/**
- * POST /v1/videos/generations
- *
- * xAI-only endpoint. Caller must provide an xAI account (OAuth or API key).
- * Connection lookup is delegated to the existing provider auth resolver via
- * a stub for now — wired in by the chat handler refactor (Phase 9).
- */
+async function resolveXaiAccount(request) {
+  // 1) Bearer header → API key fast path
+  const auth = request.headers.get("Authorization") || "";
+  const m = /^Bearer\s+(.+)$/i.exec(auth);
+  if (m) return { authType: "apikey", apiKey: m[1] };
+
+  // 2) DB-backed connection
+  const preferred = request.headers.get("x-connection-id") || null;
+  const conn = await getProviderCredentials("xai", null, null, {
+    preferredConnectionId: preferred,
+  });
+  if (!conn) return null;
+  await checkAndRefreshToken(conn).catch(() => {});
+  return {
+    authType: conn.authType || "oauth",
+    apiKey: conn.apiKey,
+    accessToken: conn.accessToken,
+    refreshToken: conn.refreshToken,
+    expiresAt: conn.expiresAt,
+  };
+}
+
 export async function POST(request) {
   let body;
   try {
@@ -25,14 +42,8 @@ export async function POST(request) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  // Resolve account from request (apikey or oauth) — minimal inline resolver.
-  // The chat handler does the heavy lifting; here we accept Authorization Bearer.
-  const auth = request.headers.get("Authorization") || "";
-  const m = /^Bearer\s+(.+)$/i.exec(auth);
-  if (!m) {
-    return Response.json({ error: "Missing Bearer token" }, { status: 401 });
-  }
-  const account = { authType: "apikey", apiKey: m[1] };
+  const account = await resolveXaiAccount(request);
+  if (!account) return Response.json({ error: "No xAI connection" }, { status: 401 });
 
   try {
     const idem = request.headers.get("Idempotency-Key") || undefined;
