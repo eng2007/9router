@@ -25,7 +25,7 @@ import {
   CODEBUDDY_CONFIG,
   getOAuthClientMetadata,
 } from "./constants/oauth";
-import { XAI_CONFIG, XAI_USER_AGENT, XAI_PKCE_VERIFIER_BYTES } from "./constants/xai";
+import { XAI_CONFIG, XAI_PKCE_VERIFIER_BYTES } from "./constants/xai";
 import { decodeIdTokenEmail as decodeXaiIdTokenEmail } from "./services/xai";
 
 const BASE64_BLOCK_SIZE = 4;

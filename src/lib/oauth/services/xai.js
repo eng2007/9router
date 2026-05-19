@@ -1,6 +1,7 @@
 import open from "open";
 import { OAuthService } from "./oauth.js";
-import { XAI_CONFIG, XAI_USER_AGENT, XAI_PKCE_VERIFIER_BYTES } from "../constants/xai.js";
+import crypto from "crypto";
+import { XAI_CONFIG, XAI_PKCE_VERIFIER_BYTES } from "../constants/xai.js";
 import { startLocalServer } from "../utils/server.js";
 import { generateCodeVerifier, generateCodeChallenge, generateState } from "../utils/pkce.js";
 import { spinner as createSpinner } from "../utils/ui.js";
@@ -22,6 +23,29 @@ const BASE64_BLOCK_SIZE = 4;
 
 let cachedDiscovery = null;
 
+export function validateOAuthEndpoint(rawUrl, field) {
+  const value = String(rawUrl || "").trim();
+  if (!value) throw new Error(`xai discovery ${field} is empty`);
+
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch (err) {
+    throw new Error(`xai discovery ${field} is invalid: ${err.message}`);
+  }
+
+  if (parsed.protocol !== "https:") {
+    throw new Error(`xai discovery ${field} must use https: ${value}`);
+  }
+
+  const host = parsed.hostname.toLowerCase().trim();
+  if (host !== "x.ai" && !host.endsWith(".x.ai")) {
+    throw new Error(`xai discovery ${field} host ${host} is not on x.ai`);
+  }
+
+  return value;
+}
+
 /**
  * Discover authorization + token endpoints. Cached process-wide.
  */
@@ -30,13 +54,13 @@ export async function discoverEndpoints() {
 
   try {
     const res = await fetch(XAI_CONFIG.discoveryUrl, {
-      headers: { Accept: "application/json", "User-Agent": XAI_USER_AGENT },
+      headers: { Accept: "application/json" },
     });
     if (res.ok) {
       const data = await res.json();
       cachedDiscovery = {
-        authorizeUrl: data.authorization_endpoint || XAI_CONFIG.authorizeUrl,
-        tokenUrl: data.token_endpoint || XAI_CONFIG.tokenUrl,
+        authorizeUrl: validateOAuthEndpoint(data.authorization_endpoint, "authorization_endpoint"),
+        tokenUrl: validateOAuthEndpoint(data.token_endpoint, "token_endpoint"),
       };
       return cachedDiscovery;
     }
@@ -79,6 +103,7 @@ export class XaiService extends OAuthService {
    * Build xAI authorization URL. Spaces in scope are encoded as %20.
    */
   buildXaiAuthUrl(redirectUri, state, codeChallenge, authorizeUrl) {
+    const nonce = crypto.randomBytes(16).toString("hex");
     const params = {
       response_type: "code",
       client_id: XAI_CONFIG.clientId,
@@ -87,6 +112,9 @@ export class XaiService extends OAuthService {
       code_challenge: codeChallenge,
       code_challenge_method: XAI_CONFIG.codeChallengeMethod,
       state,
+      nonce,
+      plan: "generic",
+      referrer: "cli-proxy-api",
     };
     const qs = Object.entries(params)
       .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
@@ -104,7 +132,6 @@ export class XaiService extends OAuthService {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         Accept: "application/json",
-        "User-Agent": XAI_USER_AGENT,
       },
       body: new URLSearchParams({
         grant_type: "authorization_code",
@@ -132,7 +159,6 @@ export class XaiService extends OAuthService {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         Accept: "application/json",
-        "User-Agent": XAI_USER_AGENT,
       },
       body: new URLSearchParams({
         grant_type: "refresh_token",
