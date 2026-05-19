@@ -10,7 +10,7 @@ export const XAI_CLIENT_ID = "b1a00492-073a-47ea-816f-4c329264a828";
 
 // OAuth issuer + endpoints
 export const XAI_ISSUER = "https://auth.x.ai";
-export const XAI_AUTH_ENDPOINT_PATH = "/oauth2/auth";
+export const XAI_AUTH_ENDPOINT_PATH = "/oauth2/authorize";
 export const XAI_TOKEN_ENDPOINT_PATH = "/oauth2/token";
 export const XAI_DISCOVERY_PATH = "/.well-known/openid-configuration";
 
