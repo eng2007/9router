@@ -195,6 +195,8 @@ const PROVIDERS = {
     callbackPath: XAI_CONFIG.callbackPath,
     pkceVerifierBytes: XAI_PKCE_VERIFIER_BYTES,
     buildAuthUrl: (config, redirectUri, state, codeChallenge) => {
+      // Mirror CLIProxyAPI BuildAuthorizeURL: includes nonce, plan, referrer
+      const nonce = require("crypto").randomBytes(16).toString("hex");
       const params = {
         response_type: "code",
         client_id: config.clientId,
@@ -203,6 +205,9 @@ const PROVIDERS = {
         code_challenge: codeChallenge,
         code_challenge_method: config.codeChallengeMethod,
         state,
+        nonce,
+        plan: "generic",
+        referrer: "cli-proxy-api",
       };
       const qs = Object.entries(params)
         .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
@@ -215,7 +220,6 @@ const PROVIDERS = {
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
           Accept: "application/json",
-          "User-Agent": XAI_USER_AGENT,
         },
         body: new URLSearchParams({
           grant_type: "authorization_code",
