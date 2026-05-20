@@ -26,8 +26,8 @@ export function generateState() {
 /**
  * Generate complete PKCE pair
  */
-export function generatePKCE() {
-  const codeVerifier = generateCodeVerifier();
+export function generatePKCE(bytes = 32) {
+  const codeVerifier = generateCodeVerifier(bytes);
   const codeChallenge = generateCodeChallenge(codeVerifier);
   const state = generateState();
 
@@ -37,4 +37,3 @@ export function generatePKCE() {
     state,
   };
 }
-

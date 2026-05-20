@@ -77,7 +77,7 @@ export async function GET(request, { params }) {
       const reservedParams = new Set(["redirect_uri"]);
       const meta = {};
       searchParams.forEach((value, key) => { if (!reservedParams.has(key)) meta[key] = value; });
-      const authData = generateAuthData(provider, redirectUri, Object.keys(meta).length ? meta : undefined);
+      const authData = await generateAuthData(provider, redirectUri, Object.keys(meta).length ? meta : undefined);
       return NextResponse.json(authData);
     }
 
@@ -138,7 +138,7 @@ export async function GET(request, { params }) {
         return NextResponse.json({ error: "Provider does not support device code flow" }, { status: 400 });
       }
 
-      const authData = generateAuthData(provider, null);
+      const authData = await generateAuthData(provider, null);
       const startUrl = searchParams.get("start_url");
       const region = searchParams.get("region");
       const authMethod = searchParams.get("auth_method");

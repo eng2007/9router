@@ -474,10 +474,15 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   }, [onClose, provider]);
 
   if (!provider || !providerInfo) return null;
+  const isXaiProvider = provider === "xai";
   const deviceLoginUrl = deviceData?.verification_uri_complete || deviceData?.verification_uri || "";
+  const modalTitle = isXaiProvider ? "Connect Grok Build OAuth" : `Connect ${providerInfo.name}`;
+  const manualPlaceholder = isXaiProvider
+    ? "http://127.0.0.1:56121/callback?code=... or copied code"
+    : placeholderUrl;
 
   return (
-    <Modal isOpen={isOpen} title={`Connect ${providerInfo.name}`} onClose={handleClose} size="lg">
+    <Modal isOpen={isOpen} title={modalTitle} onClose={handleClose} size="lg">
       <div className="flex flex-col gap-4">
         {/* Waiting + Manual Input combined (non-device-code) */}
         {(step === "waiting" || step === "input") && !isDeviceCode && (
@@ -487,7 +492,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               <span className="material-symbols-outlined text-base text-primary animate-spin">
                 progress_activity
               </span>
-              <span className="text-sm">Waiting for popup authorization…</span>
+              <span className="text-sm">
+                {isXaiProvider ? "Waiting for Grok Build OAuth…" : "Waiting for popup authorization…"}
+              </span>
             </div>
 
             {/* Divider */}
@@ -500,7 +507,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             {/* Option B: Manual paste */}
             <div className="space-y-4">
               <div>
-                <p className="text-sm font-medium mb-2">Step 1: Open this URL in your browser</p>
+                <p className="text-sm font-medium mb-2">
+                  Step 1: Open this {isXaiProvider ? "Grok Build OAuth URL" : "URL"} in your browser
+                </p>
                 <div className="flex gap-2">
                   <Input value={authData?.authUrl || ""} readOnly className="flex-1 font-mono text-xs" />
                   <Button variant="secondary" icon={copied === "auth_url" ? "check" : "content_copy"} onClick={() => copy(authData?.authUrl, "auth_url")} disabled={!authData?.authUrl}>
@@ -521,7 +530,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                 <Input
                   value={callbackUrl}
                   onChange={(e) => setCallbackUrl(e.target.value)}
-                  placeholder={placeholderUrl}
+                  placeholder={manualPlaceholder}
                   className="font-mono text-xs"
                 />
               </div>

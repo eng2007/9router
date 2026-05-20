@@ -5,6 +5,7 @@
 
 // Ensure outbound fetch respects HTTP(S)_PROXY/ALL_PROXY in Node runtime
 import "open-sse/index.js";
+import crypto from "crypto";
 
 import { generatePKCE, generateState } from "./utils/pkce";
 import {
@@ -26,7 +27,10 @@ import {
   getOAuthClientMetadata,
 } from "./constants/oauth";
 import { XAI_CONFIG, XAI_PKCE_VERIFIER_BYTES } from "./constants/xai";
-import { decodeIdTokenEmail as decodeXaiIdTokenEmail } from "./services/xai";
+import {
+  decodeIdTokenEmail as decodeXaiIdTokenEmail,
+  discoverEndpoints as discoverXaiEndpoints,
+} from "./services/xai";
 
 const BASE64_BLOCK_SIZE = 4;
 
@@ -194,9 +198,17 @@ const PROVIDERS = {
     fixedPort: XAI_CONFIG.loopbackPort,
     callbackPath: XAI_CONFIG.callbackPath,
     pkceVerifierBytes: XAI_PKCE_VERIFIER_BYTES,
+    prepareConfig: async (config) => {
+      const endpoints = await discoverXaiEndpoints();
+      return {
+        ...config,
+        authorizeUrl: endpoints.authorizeUrl,
+        tokenUrl: endpoints.tokenUrl,
+      };
+    },
     buildAuthUrl: (config, redirectUri, state, codeChallenge) => {
       // Mirror CLIProxyAPI BuildAuthorizeURL: includes nonce, plan, referrer
-      const nonce = require("crypto").randomBytes(16).toString("hex");
+      const nonce = crypto.randomBytes(16).toString("hex");
       const params = {
         response_type: "code",
         client_id: config.clientId,
@@ -1248,18 +1260,21 @@ export function getProviderNames() {
  * Generate auth data for a provider
  * @param {object} [meta] - Provider-specific metadata (e.g. gitlab clientId/baseUrl)
  */
-export function generateAuthData(providerName, redirectUri, meta) {
+export async function generateAuthData(providerName, redirectUri, meta) {
   const provider = getProvider(providerName);
-  const { codeVerifier, codeChallenge, state } = generatePKCE();
+  const config = provider.prepareConfig
+    ? await provider.prepareConfig(provider.config, meta || {})
+    : provider.config;
+  const { codeVerifier, codeChallenge, state } = generatePKCE(provider.pkceVerifierBytes);
 
   let authUrl;
   if (provider.flowType === "device_code") {
     // Device code flow doesn't have auth URL upfront
     authUrl = null;
   } else if (provider.flowType === "authorization_code_pkce") {
-    authUrl = provider.buildAuthUrl(provider.config, redirectUri, state, codeChallenge, meta || {});
+    authUrl = provider.buildAuthUrl(config, redirectUri, state, codeChallenge, meta || {});
   } else {
-    authUrl = provider.buildAuthUrl(provider.config, redirectUri, state, undefined, meta || {});
+    authUrl = provider.buildAuthUrl(config, redirectUri, state, undefined, meta || {});
   }
 
   return {
@@ -1280,8 +1295,11 @@ export function generateAuthData(providerName, redirectUri, meta) {
  */
 export async function exchangeTokens(providerName, code, redirectUri, codeVerifier, state, meta) {
   const provider = getProvider(providerName);
+  const config = provider.prepareConfig
+    ? await provider.prepareConfig(provider.config, meta || {})
+    : provider.config;
 
-  const tokens = await provider.exchangeToken(provider.config, code, redirectUri, codeVerifier, state, meta || {});
+  const tokens = await provider.exchangeToken(config, code, redirectUri, codeVerifier, state, meta || {});
 
   let extra = null;
   if (provider.postExchange) {
