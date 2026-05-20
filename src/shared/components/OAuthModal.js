@@ -66,6 +66,25 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     }
   }, [authData, provider, onSuccess]);
 
+  const completeXaiManualCode = useCallback(async (code) => {
+    if (!authData?.state) return;
+    try {
+      const res = await fetch("/api/oauth/xai/manual-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, state: authData.state }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      setStep("success");
+      onSuccess?.();
+    } catch (err) {
+      setError(err.message);
+      setStep("error");
+    }
+  }, [authData, onSuccess]);
+
   // Poll for device code token
   const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData) => {
     pollingAbortRef.current = false;
@@ -282,13 +301,16 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       pollingAbortRef.current = true;
       if (provider === "codex") {
         fetch("/api/oauth/codex/stop-proxy").catch(() => {});
+      } else if (provider === "xai") {
+        fetch("/api/oauth/xai/stop-proxy").catch(() => {});
       }
     }
   }, [isOpen, provider, startOAuthFlow]);
 
-  // Codex server-side mode: poll status (proxy auto-exchanges + saves DB)
+  // Fixed-port server-side mode: poll status (proxy auto-exchanges + saves DB)
   useEffect(() => {
-    if (!authData?.codexServerSide || !authData?.state) return;
+    const pollProvider = authData?.codexServerSide ? "codex" : authData?.xaiServerSide ? "xai" : null;
+    if (!pollProvider || !authData?.state) return;
     if (callbackProcessedRef.current) return;
     let cancelled = false;
     const POLL_INTERVAL_MS = 1500;
@@ -299,7 +321,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       if (cancelled || callbackProcessedRef.current) return;
       attempts += 1;
       try {
-        const res = await fetch(`/api/oauth/codex/poll-status?state=${encodeURIComponent(authData.state)}`);
+          const res = await fetch(`/api/oauth/${pollProvider}/poll-status?state=${encodeURIComponent(authData.state)}`);
         const data = await res.json();
         if (cancelled || callbackProcessedRef.current) return;
         if (data.status === "done") {
@@ -414,7 +436,14 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const handleManualSubmit = async () => {
     try {
       setError(null);
-      const url = new URL(callbackUrl);
+      const input = callbackUrl.trim();
+
+      if (provider === "xai" && input && !input.includes("://") && !input.includes("?") && !input.includes("code=")) {
+        await completeXaiManualCode(input);
+        return;
+      }
+
+      const url = new URL(input);
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
       const errorParam = url.searchParams.get("error");
@@ -424,7 +453,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       }
 
       if (!code) {
-        throw new Error("No authorization code found in URL");
+        throw new Error(provider === "xai" ? "Paste the callback URL or copied xAI code" : "No authorization code found in URL");
       }
 
       await exchangeTokens(code, state);
@@ -438,6 +467,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const handleClose = useCallback(() => {
     if (provider === "codex") {
       fetch("/api/oauth/codex/stop-proxy").catch(() => {});
+    } else if (provider === "xai") {
+      fetch("/api/oauth/xai/stop-proxy").catch(() => {});
     }
     onClose();
   }, [onClose, provider]);
@@ -479,9 +510,13 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               </div>
 
               <div>
-                <p className="text-sm font-medium mb-2">Step 2: Paste the callback URL here</p>
+                <p className="text-sm font-medium mb-2">
+                  Step 2: Paste the {provider === "xai" ? "callback URL or copied code" : "callback URL"} here
+                </p>
                 <p className="text-xs text-text-muted mb-2">
-                  After authorization, copy the full URL from your browser.
+                  {provider === "xai"
+                    ? "If xAI shows a code instead of redirecting, paste that code here."
+                    : "After authorization, copy the full URL from your browser."}
                 </p>
                 <Input
                   value={callbackUrl}

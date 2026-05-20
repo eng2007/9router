@@ -20,6 +20,45 @@ import {
   clearXaiSession,
 } from "@/lib/oauth/utils/server";
 
+async function completeXaiManualCode(code, state) {
+  const session = state ? getXaiSessionStatus(state) : null;
+  if (!session) {
+    throw new Error("xAI OAuth session not found; restart the login flow and paste the code again");
+  }
+  if (!code) throw new Error("Missing xAI authorization code");
+
+  try {
+    const tokenData = await exchangeTokens(
+      "xai",
+      code,
+      session.redirectUri,
+      session.codeVerifier,
+      state
+    );
+    const connection = await createProviderConnection({
+      provider: "xai",
+      authType: "oauth",
+      ...tokenData,
+      expiresAt: tokenData.expiresIn
+        ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
+        : null,
+      testStatus: "active",
+    });
+    clearXaiSession(state);
+    stopXaiProxy();
+    return {
+      id: connection.id,
+      provider: connection.provider,
+      email: connection.email,
+      displayName: connection.displayName,
+    };
+  } catch (err) {
+    clearXaiSession(state);
+    stopXaiProxy();
+    throw err;
+  }
+}
+
 /**
  * Dynamic OAuth API Route
  * Handles: authorize, exchange, device-code, poll
@@ -233,6 +272,15 @@ export async function POST(request, { params }) {
         errorDescription: result.errorDescription,
         pending: isPending,
       });
+    }
+
+    if (action === "manual-code") {
+      if (provider !== "xai") {
+        return NextResponse.json({ error: "Manual code only supported for xai" }, { status: 400 });
+      }
+      const { code, state } = body;
+      const connection = await completeXaiManualCode(String(code || "").trim(), String(state || "").trim());
+      return NextResponse.json({ success: true, connection });
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
