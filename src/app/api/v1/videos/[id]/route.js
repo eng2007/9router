@@ -1,6 +1,5 @@
 import { videosGet } from "@/lib/providers/xai/videos.js";
-import { getProviderCredentials } from "@/sse/services/auth.js";
-import { checkAndRefreshToken } from "@/sse/services/tokenRefresh.js";
+import { persistXaiAccount, resolveXaiAccount } from "../_xaiAccount.js";
 
 export async function OPTIONS() {
   return new Response(null, {
@@ -12,23 +11,6 @@ export async function OPTIONS() {
   });
 }
 
-async function resolveXaiAccount(request) {
-  const auth = request.headers.get("Authorization") || "";
-  const m = /^Bearer\s+(.+)$/i.exec(auth);
-  if (m) return { authType: "apikey", apiKey: m[1] };
-  const preferred = request.headers.get("x-connection-id") || null;
-  const conn = await getProviderCredentials("xai", null, null, { preferredConnectionId: preferred });
-  if (!conn) return null;
-  await checkAndRefreshToken(conn).catch(() => {});
-  return {
-    authType: conn.authType || "oauth",
-    apiKey: conn.apiKey,
-    accessToken: conn.accessToken,
-    refreshToken: conn.refreshToken,
-    expiresAt: conn.expiresAt,
-  };
-}
-
 /** GET /v1/videos/{id} — poll status of an async video job (xAI) */
 export async function GET(request, { params }) {
   const { id } = await params;
@@ -36,7 +18,7 @@ export async function GET(request, { params }) {
   if (!account) return Response.json({ error: "No xAI connection" }, { status: 401 });
 
   try {
-    const json = await videosGet({ id, account });
+    const json = await videosGet({ id, account, persist: persistXaiAccount });
     return Response.json(json);
   } catch (err) {
     return Response.json(

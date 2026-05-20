@@ -1,6 +1,5 @@
 import { videosGenerate } from "@/lib/providers/xai/videos.js";
-import { getProviderCredentials } from "@/sse/services/auth.js";
-import { checkAndRefreshToken } from "@/sse/services/tokenRefresh.js";
+import { persistXaiAccount, resolveXaiAccount } from "../_xaiAccount.js";
 
 export async function OPTIONS() {
   return new Response(null, {
@@ -10,28 +9,6 @@ export async function OPTIONS() {
       "Access-Control-Allow-Headers": "*",
     },
   });
-}
-
-async function resolveXaiAccount(request) {
-  // 1) Bearer header → API key fast path
-  const auth = request.headers.get("Authorization") || "";
-  const m = /^Bearer\s+(.+)$/i.exec(auth);
-  if (m) return { authType: "apikey", apiKey: m[1] };
-
-  // 2) DB-backed connection
-  const preferred = request.headers.get("x-connection-id") || null;
-  const conn = await getProviderCredentials("xai", null, null, {
-    preferredConnectionId: preferred,
-  });
-  if (!conn) return null;
-  await checkAndRefreshToken(conn).catch(() => {});
-  return {
-    authType: conn.authType || "oauth",
-    apiKey: conn.apiKey,
-    accessToken: conn.accessToken,
-    refreshToken: conn.refreshToken,
-    expiresAt: conn.expiresAt,
-  };
 }
 
 export async function POST(request) {
@@ -47,7 +24,12 @@ export async function POST(request) {
 
   try {
     const idem = request.headers.get("Idempotency-Key") || undefined;
-    const json = await videosGenerate({ request: body, account, idempotencyKey: idem });
+    const json = await videosGenerate({
+      request: body,
+      account,
+      idempotencyKey: idem,
+      persist: persistXaiAccount,
+    });
     return Response.json(json);
   } catch (err) {
     return Response.json(

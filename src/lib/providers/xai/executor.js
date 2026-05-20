@@ -229,6 +229,7 @@ export async function refreshXaiAccount(account, opts = {}) {
     ...account,
     accessToken: tokens.access_token,
     refreshToken: tokens.refresh_token || account.refreshToken,
+    expiresIn: tokens.expires_in,
     expiresAt: tokens.expires_in
       ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
       : account.expiresAt,

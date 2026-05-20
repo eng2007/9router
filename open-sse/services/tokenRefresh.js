@@ -16,9 +16,7 @@ async function refreshXaiToken(refreshToken, log) {
     return {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token || refreshToken,
-      expiresAt: tokens.expires_in
-        ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
-        : undefined,
+      expiresIn: tokens.expires_in,
       idToken: tokens.id_token,
     };
   } catch (e) {
@@ -833,4 +831,3 @@ export async function refreshWithRetry(refreshFn, maxRetries = 3, log = null) {
   log?.error?.("TOKEN_REFRESH", `All ${maxRetries} retry attempts failed`);
   return null;
 }
-
